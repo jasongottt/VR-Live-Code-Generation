@@ -30,7 +30,7 @@ public class RuntimeScriptGenerator : MonoBehaviour
 
         string code = @"
 using UnityEngine;
-
+//hello
 public class GeneratedBehavior : MonoBehaviour
 {
 void Start()
