@@ -10,59 +10,100 @@ public class RuntimeScriptGenerator : MonoBehaviour
 {
     public GameObject targetObject;
 
-    [ContextMenu("Generate And Attach Spin")]
-    public void GenerateAndAttachSpin()
+[ContextMenu("Generate Fake LLM Behavior")]
+public void GenerateAndAttachSpin()
+{
+    if (targetObject == null)
     {
-        if (targetObject == null)
+        Debug.LogError("No target object assigned.");
+        return;
+    }
+
+    string folderPath = "Assets/GeneratedBehaviors";
+
+    if (!Directory.Exists(folderPath))
+    {
+        Directory.CreateDirectory(folderPath);
+    }
+
+    // This simulates what the user would say/type.
+    string userCommand = "make this object bounce";
+
+    // Unique class name every time.
+    string className = "GeneratedBehavior_" + DateTime.Now.Ticks;
+
+    // File name must match class name.
+    string scriptPath = Path.Combine(folderPath, className + ".cs");
+
+    // This is where the LLM-generated code would go.
+    string code = FakeLLMGenerateCode(userCommand, className);
+
+    File.WriteAllText(scriptPath, code);
+
+    string targetId = GlobalObjectId.GetGlobalObjectIdSlow(targetObject).ToString();
+    EditorPrefs.SetString("PendingGeneratedBehaviorTarget", targetId);
+    EditorPrefs.SetString("PendingGeneratedBehaviorType", className);
+
+    Debug.Log("Generated script: " + className + ". Waiting for Unity to compile...");
+
+    AssetDatabase.ImportAsset(scriptPath);
+    AssetDatabase.Refresh();
+
+    GeneratedBehaviorPostCompileAttacher.TryAttachPendingBehavior();
+}
+    private string FakeLLMGenerateCode(string userCommand, string className)
+    {
+        if (userCommand.ToLower().Contains("bounce"))
         {
-            Debug.LogError("No target object assigned.");
-            return;
-        }
-
-        string folderPath = "Assets/GeneratedBehaviors";
-
-        if (!Directory.Exists(folderPath))
-        {
-            Directory.CreateDirectory(folderPath);
-        }
-
-        string scriptPath = Path.Combine(folderPath, "GeneratedBehavior.cs");
-
-        string code = @"
+            return @"
 using UnityEngine;
-//hello
-public class GeneratedBehavior : MonoBehaviour
+
+public class " + className + @" : MonoBehaviour
 {
-void Start()
-{
-}
+    private Vector3 startPosition;
 
-void Update()
-{
-    float pulse = 1f + Mathf.Sin(Time.time * 3f) * 0.25f;
-    transform.localScale = new Vector3(pulse, pulse, pulse);
-}
+    void Start()
+    {
+        startPosition = transform.position;
+    }
 
-}
-";
-
-        File.WriteAllText(scriptPath, code);
-
-        // Save which object should receive the generated script after Unity recompiles.
-        string targetId = GlobalObjectId.GetGlobalObjectIdSlow(targetObject).ToString();
-        EditorPrefs.SetString("PendingGeneratedBehaviorTarget", targetId);
-        EditorPrefs.SetString("PendingGeneratedBehaviorType", "GeneratedBehavior");
-
-        Debug.Log("Generated script. Waiting for Unity to compile...");
-
-        AssetDatabase.ImportAsset(scriptPath);
-        AssetDatabase.Refresh();
-
-        // If the type already exists, attach immediately.
-        // If this is the first time generating it, Unity will attach after compile.
-        GeneratedBehaviorPostCompileAttacher.TryAttachPendingBehavior();
+    void Update()
+    {
+        float yOffset = Mathf.Sin(Time.time * 3f) * 0.5f;
+        transform.position = startPosition + new Vector3(0f, yOffset, 0f);
     }
 }
+";
+        }
+
+        if (userCommand.ToLower().Contains("spin"))
+        {
+            return @"
+using UnityEngine;
+
+public class " + className + @" : MonoBehaviour
+{
+    void Update()
+    {
+        transform.Rotate(Vector3.up * 90f * Time.deltaTime);
+    }
+}
+";
+        }
+
+        return @"
+using UnityEngine;
+
+public class " + className + @" : MonoBehaviour
+{
+    void Update()
+    {
+    }
+}
+";
+    }
+}
+
 
 [InitializeOnLoad]
 public static class GeneratedBehaviorPostCompileAttacher
