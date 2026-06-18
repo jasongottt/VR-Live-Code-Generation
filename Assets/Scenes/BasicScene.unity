@@ -711,6 +711,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RuntimeScriptGenerator
   targetObject: {fileID: 376846051}
+  userCommand: spin
+  controllerNode: 5
 --- !u!1 &2092139007
 GameObject:
   m_ObjectHideFlags: 0

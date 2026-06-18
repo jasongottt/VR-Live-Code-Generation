@@ -1,56 +1,127 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.XR;
+using XRInputDevice = UnityEngine.XR.InputDevice;
 
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
+
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.Compilation;
+#endif
 
 public class RuntimeScriptGenerator : MonoBehaviour
 {
     public GameObject targetObject;
+    public string userCommand = "make this object bounce";
+    public XRNode controllerNode = XRNode.RightHand;
 
-[ContextMenu("Generate Fake LLM Behavior")]
-public void GenerateAndAttachSpin()
-{
-    if (targetObject == null)
+    private readonly List<XRInputDevice> controllerDevices = new List<XRInputDevice>();
+    private bool wasPrimaryButtonPressed;
+
+    private void Update()
     {
-        Debug.LogError("No target object assigned.");
+        if (WasGenerateInputPressed())
+        {
+            GenerateAndAttachSpin();
+        }
+    }
+
+    private bool WasGenerateInputPressed()
+    {
+        return WasSpacebarPressed() || WasControllerPrimaryButtonPressed();
+    }
+
+    private bool WasSpacebarPressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+        {
+            return true;
+        }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            return true;
+        }
+#endif
+
+        return false;
+    }
+
+    private bool WasControllerPrimaryButtonPressed()
+    {
+        bool isPressed = false;
+
+        controllerDevices.Clear();
+        UnityEngine.XR.InputDevices.GetDevicesAtXRNode(controllerNode, controllerDevices);
+
+        foreach (XRInputDevice device in controllerDevices)
+        {
+            if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out bool pressed) && pressed)
+            {
+                isPressed = true;
+                break;
+            }
+        }
+
+        bool wasPressedThisFrame = isPressed && !wasPrimaryButtonPressed;
+        wasPrimaryButtonPressed = isPressed;
+
+        return wasPressedThisFrame;
+    }
+
+    [ContextMenu("Generate Fake LLM Behavior")]
+    public void GenerateAndAttachSpin()
+    {
+#if !UNITY_EDITOR
+        Debug.LogError("Runtime script generation uses UnityEditor APIs and only works in the Unity Editor.");
         return;
+#else
+        if (targetObject == null)
+        {
+            Debug.LogError("No target object assigned.");
+            return;
+        }
+
+        string folderPath = "Assets/GeneratedBehaviors";
+
+        if (!Directory.Exists(folderPath))
+        {
+            Directory.CreateDirectory(folderPath);
+        }
+
+        // Unique class name every time.
+        string className = "GeneratedBehavior_" + DateTime.Now.Ticks;
+
+        // File name must match class name.
+        string scriptPath = Path.Combine(folderPath, className + ".cs");
+
+        // This is where the LLM-generated code would go.
+        string code = FakeLLMGenerateCode(userCommand, className);
+
+        File.WriteAllText(scriptPath, code);
+
+        string targetId = GlobalObjectId.GetGlobalObjectIdSlow(targetObject).ToString();
+        EditorPrefs.SetString("PendingGeneratedBehaviorTarget", targetId);
+        EditorPrefs.SetString("PendingGeneratedBehaviorType", className);
+
+        Debug.Log("Generated script: " + className + ". Waiting for Unity to compile...");
+
+        AssetDatabase.ImportAsset(scriptPath);
+        AssetDatabase.Refresh();
+
+        GeneratedBehaviorPostCompileAttacher.TryAttachPendingBehavior();
+#endif
     }
 
-    string folderPath = "Assets/GeneratedBehaviors";
-
-    if (!Directory.Exists(folderPath))
-    {
-        Directory.CreateDirectory(folderPath);
-    }
-
-    // This simulates what the user would say/type.
-    string userCommand = "make this object bounce";
-
-    // Unique class name every time.
-    string className = "GeneratedBehavior_" + DateTime.Now.Ticks;
-
-    // File name must match class name.
-    string scriptPath = Path.Combine(folderPath, className + ".cs");
-
-    // This is where the LLM-generated code would go.
-    string code = FakeLLMGenerateCode(userCommand, className);
-
-    File.WriteAllText(scriptPath, code);
-
-    string targetId = GlobalObjectId.GetGlobalObjectIdSlow(targetObject).ToString();
-    EditorPrefs.SetString("PendingGeneratedBehaviorTarget", targetId);
-    EditorPrefs.SetString("PendingGeneratedBehaviorType", className);
-
-    Debug.Log("Generated script: " + className + ". Waiting for Unity to compile...");
-
-    AssetDatabase.ImportAsset(scriptPath);
-    AssetDatabase.Refresh();
-
-    GeneratedBehaviorPostCompileAttacher.TryAttachPendingBehavior();
-}
     private string FakeLLMGenerateCode(string userCommand, string className)
     {
         if (userCommand.ToLower().Contains("bounce"))
@@ -104,7 +175,7 @@ public class " + className + @" : MonoBehaviour
     }
 }
 
-
+#if UNITY_EDITOR
 [InitializeOnLoad]
 public static class GeneratedBehaviorPostCompileAttacher
 {
@@ -190,3 +261,4 @@ public static class GeneratedBehaviorPostCompileAttacher
         EditorPrefs.DeleteKey("PendingGeneratedBehaviorType");
     }
 }
+#endif
