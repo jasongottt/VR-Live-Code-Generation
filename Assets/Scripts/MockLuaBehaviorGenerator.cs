@@ -31,9 +31,15 @@ public static class MockLuaBehaviorGenerator
             wroteLine = true;
         }
 
+        if (UsesVrContext(command))
+        {
+            script.AppendLine("    log(\"Using live VR head/controller context.\")");
+            wroteLine = true;
+        }
+
         Color? color = TryGetColor(command);
 
-        if (color.HasValue)
+        if (color.HasValue && !UsesConditionalColor(command))
         {
             AppendSetColor(script, color.Value, "    ");
             wroteLine = true;
@@ -73,6 +79,60 @@ public static class MockLuaBehaviorGenerator
         {
             script.AppendLine("    local scale = 1.0 + math.sin(time * 4.0) * 0.15");
             script.AppendLine("    object:setScale(scale, scale, scale)");
+            wroteLine = true;
+        }
+
+        if (command.Contains("follow"))
+        {
+            script.AppendLine("    if rightHand:isTracked() then");
+            script.AppendLine("        local hand = rightHand:getPosition()");
+            script.AppendLine("        object:moveToward(hand.x, hand.y, hand.z, 1.25, dt)");
+            script.AppendLine("    end");
+            wroteLine = true;
+        }
+
+        if (command.Contains("run away") || command.Contains("avoid"))
+        {
+            script.AppendLine("    if rightHand:isTracked() then");
+            script.AppendLine("        local hand = rightHand:getPosition()");
+            script.AppendLine("        local pos = object:getPosition()");
+            script.AppendLine("        local d = distance(hand, pos)");
+            script.AppendLine("        if d < 1.0 then");
+            script.AppendLine("            local away = direction(hand, pos)");
+            script.AppendLine("            object:translate(away.x * 1.5 * dt, away.y * 1.5 * dt, away.z * 1.5 * dt)");
+            script.AppendLine("        end");
+            script.AppendLine("    end");
+            wroteLine = true;
+        }
+
+        if (command.Contains("look at me") || command.Contains("look at player") || command.Contains("look at head"))
+        {
+            script.AppendLine("    local head = player:getHeadPosition()");
+            script.AppendLine("    object:lookAt(head.x, head.y, head.z)");
+            wroteLine = true;
+        }
+
+        if (command.Contains("orbit") || command.Contains("circle me") || command.Contains("circle around me"))
+        {
+            script.AppendLine("    local head = player:getHeadPosition()");
+            script.AppendLine("    local radius = 1.25");
+            script.AppendLine("    local orbitSpeed = 1.5");
+            script.AppendLine("    object:setPosition(head.x + math.cos(time * orbitSpeed) * radius, head.y, head.z + math.sin(time * orbitSpeed) * radius)");
+            script.AppendLine("    object:lookAt(head.x, head.y, head.z)");
+            wroteLine = true;
+        }
+
+        Color? color = TryGetColor(command);
+
+        if (color.HasValue && UsesConditionalColor(command))
+        {
+            script.AppendLine("    local head = player:getHeadPosition()");
+            script.AppendLine("    local pos = object:getPosition()");
+            script.AppendLine("    if distance(head, pos) < 1.25 then");
+            AppendSetColor(script, color.Value, "        ");
+            script.AppendLine("    else");
+            script.AppendLine("        object:setColor(1, 1, 1, 1)");
+            script.AppendLine("    end");
             wroteLine = true;
         }
 
@@ -120,6 +180,23 @@ public static class MockLuaBehaviorGenerator
         }
 
         return null;
+    }
+
+    private static bool UsesVrContext(string command)
+    {
+        return command.Contains("follow")
+            || command.Contains("run away")
+            || command.Contains("avoid")
+            || command.Contains("look at")
+            || command.Contains("orbit")
+            || command.Contains("circle me")
+            || command.Contains("circle around me")
+            || UsesConditionalColor(command);
+    }
+
+    private static bool UsesConditionalColor(string command)
+    {
+        return command.Contains("close") || command.Contains("near");
     }
 
     private static void AppendSetColor(StringBuilder script, Color color, string indent)

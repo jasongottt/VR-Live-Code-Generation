@@ -33,6 +33,18 @@ public sealed class LuaObjectApi
         target.transform.Rotate(new Vector3(x, y, z), Space.Self);
     }
 
+    public void lookAt(float x, float y, float z)
+    {
+        target.transform.LookAt(new Vector3(x, y, z));
+    }
+
+    public void moveToward(float x, float y, float z, float speed, float dt)
+    {
+        Vector3 destination = new Vector3(x, y, z);
+        float step = Mathf.Max(0f, speed) * Mathf.Max(0f, dt);
+        target.transform.position = Vector3.MoveTowards(target.transform.position, destination, step);
+    }
+
     public LuaVector3 getScale()
     {
         return new LuaVector3(target.transform.localScale);
@@ -41,6 +53,16 @@ public sealed class LuaObjectApi
     public void setScale(float x, float y, float z)
     {
         target.transform.localScale = new Vector3(x, y, z);
+    }
+
+    public void setVisible(bool isVisible)
+    {
+        Renderer renderer = GetRenderer();
+
+        if (renderer != null)
+        {
+            renderer.enabled = isVisible;
+        }
     }
 
     public void setColor(float r, float g, float b, float a)
@@ -99,18 +121,25 @@ public sealed class LuaObjectApi
             return runtimeMaterial;
         }
 
+        Renderer renderer = GetRenderer();
+
+        if (renderer == null)
+        {
+            return null;
+        }
+
+        runtimeMaterial = renderer.material;
+        return runtimeMaterial;
+    }
+
+    private Renderer GetRenderer()
+    {
         if (cachedRenderer == null)
         {
             cachedRenderer = target.GetComponent<Renderer>();
         }
 
-        if (cachedRenderer == null)
-        {
-            return null;
-        }
-
-        runtimeMaterial = cachedRenderer.material;
-        return runtimeMaterial;
+        return cachedRenderer;
     }
 }
 
@@ -130,5 +159,10 @@ public sealed class LuaVector3
         x = vector.x;
         y = vector.y;
         z = vector.z;
+    }
+
+    public Vector3 ToVector3()
+    {
+        return new Vector3(x, y, z);
     }
 }

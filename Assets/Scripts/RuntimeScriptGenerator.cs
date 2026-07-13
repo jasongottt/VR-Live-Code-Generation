@@ -12,6 +12,9 @@ public class RuntimeScriptGenerator : MonoBehaviour
     public GameObject targetObject;
     public string userCommand = "make this object bounce";
     public XRNode controllerNode = XRNode.RightHand;
+    public Transform headTransform;
+    public Transform leftHandTransform;
+    public Transform rightHandTransform;
 
     private readonly List<XRInputDevice> controllerDevices = new List<XRInputDevice>();
     private bool wasPrimaryButtonPressed;
@@ -81,6 +84,9 @@ public class RuntimeScriptGenerator : MonoBehaviour
 
         string scriptText = MockLuaBehaviorGenerator.Generate(userCommand);
         ScriptedLuaBehavior behavior = targetObject.AddComponent<ScriptedLuaBehavior>();
+        behavior.headTransform = headTransform;
+        behavior.leftHandTransform = leftHandTransform;
+        behavior.rightHandTransform = rightHandTransform;
         behavior.LoadScript(scriptText, userCommand);
 
         Debug.Log("Attached scripted Lua behavior to " + targetObject.name + " from command: " + userCommand);

@@ -1,6 +1,7 @@
 using System;
 using MoonSharp.Interpreter;
 using UnityEngine;
+using UnityEngine.XR;
 
 public class ScriptedLuaBehavior : MonoBehaviour
 {
@@ -8,6 +9,9 @@ public class ScriptedLuaBehavior : MonoBehaviour
     public string scriptText;
 
     public string sourceCommand;
+    public Transform headTransform;
+    public Transform leftHandTransform;
+    public Transform rightHandTransform;
 
     private Script script;
     private DynValue startFunction;
@@ -63,9 +67,15 @@ public class ScriptedLuaBehavior : MonoBehaviour
             script = new Script(CoreModules.Preset_SoftSandbox);
             script.Options.DebugPrint = message => Debug.Log("[Lua] " + message);
             script.Globals["object"] = UserData.Create(new LuaObjectApi(gameObject));
+            script.Globals["world"] = UserData.Create(new LuaWorldApi(headTransform));
+            script.Globals["player"] = UserData.Create(new LuaWorldApi(headTransform));
+            script.Globals["leftHand"] = UserData.Create(new LuaControllerApi(XRNode.LeftHand, leftHandTransform));
+            script.Globals["rightHand"] = UserData.Create(new LuaControllerApi(XRNode.RightHand, rightHandTransform));
             script.Globals["time"] = Time.time;
             script.Globals["dt"] = Time.deltaTime;
             script.Globals["log"] = (Action<string>)LogFromLua;
+            script.Globals["distance"] = (Func<LuaVector3, LuaVector3, float>)LuaMathApi.distance;
+            script.Globals["direction"] = (Func<LuaVector3, LuaVector3, LuaVector3>)LuaMathApi.direction;
 
             script.DoString(scriptText);
 
@@ -104,6 +114,8 @@ public class ScriptedLuaBehavior : MonoBehaviour
 
         UserData.RegisterType<LuaObjectApi>();
         UserData.RegisterType<LuaVector3>();
+        UserData.RegisterType<LuaWorldApi>();
+        UserData.RegisterType<LuaControllerApi>();
         registeredUserData = true;
     }
 }
