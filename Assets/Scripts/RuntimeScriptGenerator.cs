@@ -16,6 +16,9 @@ public class RuntimeScriptGenerator : MonoBehaviour
     public Transform leftHandTransform;
     public Transform rightHandTransform;
 
+    [TextArea(8, 24)]
+    public string lastGeneratedLuaScript;
+
     private readonly List<XRInputDevice> controllerDevices = new List<XRInputDevice>();
     private bool wasPrimaryButtonPressed;
 
@@ -83,6 +86,7 @@ public class RuntimeScriptGenerator : MonoBehaviour
         }
 
         string scriptText = MockLuaBehaviorGenerator.Generate(userCommand);
+        lastGeneratedLuaScript = scriptText;
         ScriptedLuaBehavior behavior = targetObject.AddComponent<ScriptedLuaBehavior>();
         behavior.headTransform = headTransform;
         behavior.leftHandTransform = leftHandTransform;
@@ -90,5 +94,21 @@ public class RuntimeScriptGenerator : MonoBehaviour
         behavior.LoadScript(scriptText, userCommand);
 
         Debug.Log("Attached scripted Lua behavior to " + targetObject.name + " from command: " + userCommand);
+    }
+
+    public void SubmitCommand(string command, bool generateImmediately = true)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            Debug.LogWarning("Ignored empty runtime command.");
+            return;
+        }
+
+        userCommand = command.Trim();
+
+        if (generateImmediately)
+        {
+            GenerateAndAttachSpin();
+        }
     }
 }

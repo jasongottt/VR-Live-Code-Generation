@@ -711,8 +711,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RuntimeScriptGenerator
   targetObject: {fileID: 376846051}
-  userCommand: make this object bounce, spin, and pulse.
+  userCommand: turn red when I get close
   controllerNode: 5
+  headTransform: {fileID: 0}
+  leftHandTransform: {fileID: 0}
+  rightHandTransform: {fileID: 0}
 --- !u!1 &2092139007
 GameObject:
   m_ObjectHideFlags: 0
