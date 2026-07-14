@@ -1,4 +1,11 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
+using XRInputDevice = UnityEngine.XR.InputDevice;
+
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
 using UnityEngine.Windows.Speech;
@@ -7,13 +14,19 @@ using UnityEngine.Windows.Speech;
 public class SpeechCommandInput : MonoBehaviour
 {
     public RuntimeScriptGenerator runtimeScriptGenerator;
-    public bool startListeningOnEnable = true;
+    public bool listenWhileInputHeld = true;
+    public bool startListeningOnEnable;
+    public bool disableGeneratorInputTrigger = true;
     public bool generateImmediately = true;
     public bool restartAfterDictationStops = true;
     public float restartDelaySeconds = 0.25f;
+    public XRNode controllerNode = XRNode.RightHand;
 
     [TextArea(2, 6)]
     public string lastRecognizedText;
+
+    private readonly List<XRInputDevice> controllerDevices = new List<XRInputDevice>();
+    private bool wasPushToTalkHeld;
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
     private DictationRecognizer dictationRecognizer;
@@ -31,11 +44,21 @@ public class SpeechCommandInput : MonoBehaviour
         {
             runtimeScriptGenerator = GetComponent<RuntimeScriptGenerator>();
         }
+
+        if (runtimeScriptGenerator != null)
+        {
+            controllerNode = runtimeScriptGenerator.controllerNode;
+
+            if (disableGeneratorInputTrigger)
+            {
+                runtimeScriptGenerator.generateOnInputPress = false;
+            }
+        }
     }
 
     private void OnEnable()
     {
-        if (startListeningOnEnable)
+        if (!listenWhileInputHeld && startListeningOnEnable)
         {
             StartListening();
         }
@@ -55,8 +78,13 @@ public class SpeechCommandInput : MonoBehaviour
 
     private void Update()
     {
+        if (listenWhileInputHeld)
+        {
+            UpdatePushToTalk();
+        }
+
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-        if (restartAtTime > 0f && Time.unscaledTime >= restartAtTime)
+        if (restartAtTime > 0f && Time.unscaledTime >= restartAtTime && ShouldBeListening())
         {
             restartAtTime = -1f;
             StartListening();
@@ -84,6 +112,10 @@ public class SpeechCommandInput : MonoBehaviour
     public void StopListening()
     {
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        restartAtTime = -1f;
+#endif
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
         if (dictationRecognizer == null)
         {
             return;
@@ -94,6 +126,67 @@ public class SpeechCommandInput : MonoBehaviour
             dictationRecognizer.Stop();
         }
 #endif
+    }
+
+    private void UpdatePushToTalk()
+    {
+        bool isHeld = IsPushToTalkHeld();
+
+        if (isHeld && !wasPushToTalkHeld)
+        {
+            StartListening();
+        }
+        else if (!isHeld && wasPushToTalkHeld)
+        {
+            StopListening();
+        }
+
+        wasPushToTalkHeld = isHeld;
+    }
+
+    private bool ShouldBeListening()
+    {
+        return !listenWhileInputHeld || IsPushToTalkHeld();
+    }
+
+    private bool IsPushToTalkHeld()
+    {
+        return IsSpacebarHeld() || IsControllerPrimaryButtonHeld();
+    }
+
+    private bool IsSpacebarHeld()
+    {
+#if ENABLE_INPUT_SYSTEM
+        if (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
+        {
+            return true;
+        }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+        if (Input.GetKey(KeyCode.Space))
+        {
+            return true;
+        }
+#endif
+
+        return false;
+    }
+
+    private bool IsControllerPrimaryButtonHeld()
+    {
+        controllerDevices.Clear();
+        InputDevices.GetDevicesAtXRNode(controllerNode, controllerDevices);
+
+        foreach (XRInputDevice device in controllerDevices)
+        {
+            if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out bool pressed) && pressed)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void SubmitRecognizedText(string recognizedText)
@@ -153,7 +246,7 @@ public class SpeechCommandInput : MonoBehaviour
             Debug.LogWarning("Speech command dictation stopped: " + cause);
         }
 
-        if (restartAfterDictationStops && isActiveAndEnabled)
+        if (restartAfterDictationStops && isActiveAndEnabled && ShouldBeListening())
         {
             restartAtTime = Time.unscaledTime + Mathf.Max(0f, restartDelaySeconds);
         }
@@ -163,7 +256,7 @@ public class SpeechCommandInput : MonoBehaviour
     {
         Debug.LogError("Speech command dictation error: " + error + " (" + hresult + ")");
 
-        if (restartAfterDictationStops && isActiveAndEnabled)
+        if (restartAfterDictationStops && isActiveAndEnabled && ShouldBeListening())
         {
             restartAtTime = Time.unscaledTime + Mathf.Max(0f, restartDelaySeconds);
         }

@@ -16,9 +16,12 @@ public class RuntimeScriptGenerator : MonoBehaviour
     public Transform headTransform;
     public Transform leftHandTransform;
     public Transform rightHandTransform;
+    public bool generateOnInputPress = true;
     public bool useLocalLLM;
+    public bool refineSameChannelBehaviors = true;
     public bool fallBackToMockOnLLMError = true;
     public OllamaLuaBehaviorGenerator localLLMGenerator;
+    public BehaviorChannel lastBehaviorChannel;
 
     [TextArea(8, 24)]
     public string lastGeneratedLuaScript;
@@ -37,7 +40,7 @@ public class RuntimeScriptGenerator : MonoBehaviour
 
     private void Update()
     {
-        if (WasGenerateInputPressed())
+        if (generateOnInputPress && WasGenerateInputPressed())
         {
             GenerateAndAttachSpin();
         }
@@ -98,6 +101,11 @@ public class RuntimeScriptGenerator : MonoBehaviour
             return;
         }
 
+        string command = userCommand;
+        BehaviorChannel behaviorChannel = BehaviorChannelClassifier.Classify(command);
+        lastBehaviorChannel = behaviorChannel;
+        ScriptedLuaBehavior existingBehavior = FindExistingBehaviorForChannel(behaviorChannel);
+
         if (useLocalLLM)
         {
             if (isGeneratingScript)
@@ -106,15 +114,15 @@ public class RuntimeScriptGenerator : MonoBehaviour
                 return;
             }
 
-            StartCoroutine(GenerateWithLocalLLM());
+            StartCoroutine(GenerateWithLocalLLM(command, behaviorChannel, existingBehavior));
             return;
         }
 
-        string scriptText = MockLuaBehaviorGenerator.Generate(userCommand);
-        AttachLuaBehavior(scriptText);
+        string scriptText = MockLuaBehaviorGenerator.Generate(command);
+        AttachOrRefineLuaBehavior(scriptText, command, behaviorChannel, existingBehavior);
     }
 
-    private IEnumerator GenerateWithLocalLLM()
+    private IEnumerator GenerateWithLocalLLM(string command, BehaviorChannel behaviorChannel, ScriptedLuaBehavior existingBehavior)
     {
         if (localLLMGenerator == null)
         {
@@ -122,7 +130,7 @@ public class RuntimeScriptGenerator : MonoBehaviour
 
             if (fallBackToMockOnLLMError)
             {
-                AttachLuaBehavior(MockLuaBehaviorGenerator.Generate(userCommand));
+                AttachOrRefineLuaBehavior(MockLuaBehaviorGenerator.Generate(command), command, behaviorChannel, existingBehavior);
             }
 
             yield break;
@@ -132,7 +140,16 @@ public class RuntimeScriptGenerator : MonoBehaviour
         string generatedScript = null;
         string error = null;
 
-        yield return localLLMGenerator.GenerateScript(userCommand, script => generatedScript = script, message => error = message);
+        string existingCommand = existingBehavior != null ? existingBehavior.sourceCommand : null;
+        string existingScript = existingBehavior != null ? existingBehavior.scriptText : null;
+
+        yield return localLLMGenerator.GenerateScript(
+            command,
+            behaviorChannel,
+            existingCommand,
+            existingScript,
+            script => generatedScript = script,
+            message => error = message);
 
         isGeneratingScript = false;
 
@@ -142,25 +159,75 @@ public class RuntimeScriptGenerator : MonoBehaviour
 
             if (fallBackToMockOnLLMError)
             {
-                AttachLuaBehavior(MockLuaBehaviorGenerator.Generate(userCommand));
+                AttachOrRefineLuaBehavior(MockLuaBehaviorGenerator.Generate(command), command, behaviorChannel, existingBehavior);
             }
 
             yield break;
         }
 
-        AttachLuaBehavior(generatedScript);
+        AttachOrRefineLuaBehavior(generatedScript, command, behaviorChannel, existingBehavior);
     }
 
-    private void AttachLuaBehavior(string scriptText)
+    private void AttachOrRefineLuaBehavior(string scriptText, string command, BehaviorChannel behaviorChannel, ScriptedLuaBehavior existingBehavior)
     {
         lastGeneratedLuaScript = scriptText;
+
+        if (existingBehavior != null)
+        {
+            existingBehavior.revisionCount++;
+            existingBehavior.behaviorChannel = behaviorChannel;
+            existingBehavior.headTransform = headTransform;
+            existingBehavior.leftHandTransform = leftHandTransform;
+            existingBehavior.rightHandTransform = rightHandTransform;
+            existingBehavior.LoadScript(scriptText, CombineCommandHistory(existingBehavior.sourceCommand, command));
+
+            Debug.Log("Refined " + behaviorChannel + " Lua behavior on " + targetObject.name + " from command: " + command);
+            return;
+        }
+
         ScriptedLuaBehavior behavior = targetObject.AddComponent<ScriptedLuaBehavior>();
+        behavior.behaviorChannel = behaviorChannel;
         behavior.headTransform = headTransform;
         behavior.leftHandTransform = leftHandTransform;
         behavior.rightHandTransform = rightHandTransform;
-        behavior.LoadScript(scriptText, userCommand);
+        behavior.LoadScript(scriptText, command);
 
-        Debug.Log("Attached scripted Lua behavior to " + targetObject.name + " from command: " + userCommand);
+        Debug.Log("Attached " + behaviorChannel + " Lua behavior to " + targetObject.name + " from command: " + command);
+    }
+
+    private ScriptedLuaBehavior FindExistingBehaviorForChannel(BehaviorChannel behaviorChannel)
+    {
+        if (!refineSameChannelBehaviors || behaviorChannel == BehaviorChannel.General)
+        {
+            return null;
+        }
+
+        ScriptedLuaBehavior[] behaviors = targetObject.GetComponents<ScriptedLuaBehavior>();
+
+        for (int i = behaviors.Length - 1; i >= 0; i--)
+        {
+            if (behaviors[i].behaviorChannel == behaviorChannel)
+            {
+                return behaviors[i];
+            }
+        }
+
+        return null;
+    }
+
+    private static string CombineCommandHistory(string existingCommand, string newCommand)
+    {
+        if (string.IsNullOrWhiteSpace(existingCommand))
+        {
+            return newCommand;
+        }
+
+        if (existingCommand.Contains(" + "))
+        {
+            return existingCommand + " + " + newCommand;
+        }
+
+        return existingCommand + " + " + newCommand;
     }
 
     public void SubmitCommand(string command, bool generateImmediately = true)

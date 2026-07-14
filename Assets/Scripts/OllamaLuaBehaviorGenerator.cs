@@ -20,7 +20,13 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
     [TextArea(8, 24)]
     public string lastRawResponse;
 
-    public IEnumerator GenerateScript(string userCommand, Action<string> onSuccess, Action<string> onError)
+    public IEnumerator GenerateScript(
+        string userCommand,
+        BehaviorChannel behaviorChannel,
+        string existingCommand,
+        string existingScript,
+        Action<string> onSuccess,
+        Action<string> onError)
     {
         if (string.IsNullOrWhiteSpace(userCommand))
         {
@@ -28,7 +34,7 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
             yield break;
         }
 
-        lastPrompt = BuildPrompt(userCommand);
+        lastPrompt = BuildPrompt(userCommand, behaviorChannel, existingCommand, existingScript);
 
         if (logPrompt)
         {
@@ -95,14 +101,39 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
         onSuccess?.Invoke(scriptText);
     }
 
-    private static string BuildPrompt(string userCommand)
+    private static string BuildPrompt(string userCommand, BehaviorChannel behaviorChannel, string existingCommand, string existingScript)
     {
+        bool isRefinement = !string.IsNullOrWhiteSpace(existingScript);
+        string refinementInstructions = isRefinement
+            ? @"
+You are refining an existing behavior in the same behavior channel.
+Return one complete replacement Lua script for this channel.
+Preserve the useful intent of the existing script and combine it with the new user command.
+Do not return a patch, diff, explanation, or second script.
+
+Existing behavior channel:
+" + behaviorChannel + @"
+
+Existing command history:
+""" + EscapePromptText(existingCommand) + @"""
+
+Existing Lua script:
+```lua
+" + existingScript + @"
+```
+"
+            : @"
+You are creating a new behavior for this behavior channel:
+" + behaviorChannel + @"
+";
+
         return
 @"You generate Lua scripts for a Unity VR behavior sandbox.
-Return only Lua code. Do not use Markdown fences. Do not explain anything.
+Return only Lua code. Do not use Markdown fences. Do not explain anything. Return only Lua code, nothing else.
 
 Write optional function start() and/or function update(dt).
 The script controls one selected object.
+" + refinementInstructions + @"
 
 Allowed globals:
 - object
@@ -119,12 +150,16 @@ Allowed globals:
 
 Allowed object methods:
 - object:getPosition()
+- object.position
+- object:getForward()
+- object.forward
 - object:setPosition(x, y, z)
 - object:translate(x, y, z)
 - object:rotate(x, y, z)
 - object:lookAt(x, y, z)
 - object:moveToward(x, y, z, speed, dt)
 - object:getScale()
+- object.scale
 - object:setScale(x, y, z)
 - object:setColor(r, g, b, a)
 - object:setEmission(r, g, b, intensity)
@@ -132,30 +167,52 @@ Allowed object methods:
 
 Allowed player/world methods:
 - player:getHeadPosition()
+- player:getPosition()
+- player.position
 - player:getHeadForward()
+- player:getForward()
+- player.forward
+- player:isTracked()
 - world:getHeadPosition()
+- world:getPosition()
+- world.position
 - world:getHeadForward()
+- world:getForward()
+- world.forward
+- world:isTracked()
 
 Allowed hand methods:
 - leftHand:getPosition()
+- leftHand.position
 - leftHand:getForward()
+- leftHand.forward
 - leftHand:getRotationEuler()
+- leftHand.rotationEuler
 - leftHand:isTracked()
 - rightHand:getPosition()
+- rightHand.position
 - rightHand:getForward()
+- rightHand.forward
 - rightHand:getRotationEuler()
+- rightHand.rotationEuler
 - rightHand:isTracked()
 
 Rules:
 - Use only the allowed API above.
 - Do not use require, io, os, debug, load, loadstring, dofile, collectgarbage, package, coroutine, setmetatable, getmetatable, rawget, rawset, or while loops.
 - Do not create infinite loops.
+- Use only the globals and methods listed above.
 - Prefer simple frame-by-frame behavior in update(dt).
 - If using a hand position, check isTracked() first.
 - Use numeric literals for colors, speeds, distances, and amplitudes.
 
 User command:
-""" + userCommand.Replace("\"", "'") + @"""";
+""" + EscapePromptText(userCommand) + @"""";
+    }
+
+    private static string EscapePromptText(string value)
+    {
+        return string.IsNullOrEmpty(value) ? string.Empty : value.Replace("\"", "'");
     }
 
     private static string SanitizeLuaResponse(string response)

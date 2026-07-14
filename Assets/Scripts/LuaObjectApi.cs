@@ -18,6 +18,21 @@ public sealed class LuaObjectApi
         return new LuaVector3(target.transform.position);
     }
 
+    public LuaVector3 position
+    {
+        get { return getPosition(); }
+    }
+
+    public LuaVector3 getForward()
+    {
+        return new LuaVector3(target.transform.forward);
+    }
+
+    public LuaVector3 forward
+    {
+        get { return getForward(); }
+    }
+
     public void setPosition(float x, float y, float z)
     {
         target.transform.position = new Vector3(x, y, z);
@@ -48,6 +63,11 @@ public sealed class LuaObjectApi
     public LuaVector3 getScale()
     {
         return new LuaVector3(target.transform.localScale);
+    }
+
+    public LuaVector3 scale
+    {
+        get { return getScale(); }
     }
 
     public void setScale(float x, float y, float z)

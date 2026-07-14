@@ -20,10 +20,41 @@ public sealed class LuaWorldApi
         return new LuaVector3(head != null ? head.position : Vector3.zero);
     }
 
+    public LuaVector3 getPosition()
+    {
+        return getHeadPosition();
+    }
+
     public LuaVector3 getHeadForward()
     {
         Transform head = GetHeadTransform();
         return new LuaVector3(head != null ? head.forward : Vector3.forward);
+    }
+
+    public LuaVector3 getForward()
+    {
+        return getHeadForward();
+    }
+
+    public LuaVector3 getRotationEuler()
+    {
+        Transform head = GetHeadTransform();
+        return new LuaVector3(head != null ? head.eulerAngles : Vector3.zero);
+    }
+
+    public bool isTracked()
+    {
+        return GetHeadTransform() != null;
+    }
+
+    public LuaVector3 position
+    {
+        get { return getHeadPosition(); }
+    }
+
+    public LuaVector3 forward
+    {
+        get { return getHeadForward(); }
     }
 
     private Transform GetHeadTransform()
@@ -61,6 +92,11 @@ public sealed class LuaControllerApi
         return new LuaVector3(fallbackTransform != null ? fallbackTransform.position : Vector3.zero);
     }
 
+    public LuaVector3 position
+    {
+        get { return getPosition(); }
+    }
+
     public LuaVector3 getForward()
     {
         if (TryGetDeviceRotation(out Quaternion rotation))
@@ -71,6 +107,11 @@ public sealed class LuaControllerApi
         return new LuaVector3(fallbackTransform != null ? fallbackTransform.forward : Vector3.forward);
     }
 
+    public LuaVector3 forward
+    {
+        get { return getForward(); }
+    }
+
     public LuaVector3 getRotationEuler()
     {
         if (TryGetDeviceRotation(out Quaternion rotation))
@@ -79,6 +120,11 @@ public sealed class LuaControllerApi
         }
 
         return new LuaVector3(fallbackTransform != null ? fallbackTransform.eulerAngles : Vector3.zero);
+    }
+
+    public LuaVector3 rotationEuler
+    {
+        get { return getRotationEuler(); }
     }
 
     public bool isTracked()
@@ -136,12 +182,12 @@ public static class LuaMathApi
 {
     public static float distance(LuaVector3 a, LuaVector3 b)
     {
-        return Vector3.Distance(a.ToVector3(), b.ToVector3());
+        return Vector3.Distance(ToUnityVector(a), ToUnityVector(b));
     }
 
     public static LuaVector3 direction(LuaVector3 from, LuaVector3 to)
     {
-        Vector3 delta = to.ToVector3() - from.ToVector3();
+        Vector3 delta = ToUnityVector(to) - ToUnityVector(from);
 
         if (delta.sqrMagnitude <= Mathf.Epsilon)
         {
@@ -149,5 +195,10 @@ public static class LuaMathApi
         }
 
         return new LuaVector3(delta.normalized);
+    }
+
+    private static Vector3 ToUnityVector(LuaVector3 vector)
+    {
+        return vector != null ? vector.ToVector3() : Vector3.zero;
     }
 }

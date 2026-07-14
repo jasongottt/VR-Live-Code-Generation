@@ -9,6 +9,8 @@ public class ScriptedLuaBehavior : MonoBehaviour
     public string scriptText;
 
     public string sourceCommand;
+    public BehaviorChannel behaviorChannel = BehaviorChannel.General;
+    public int revisionCount;
     public Transform headTransform;
     public Transform leftHandTransform;
     public Transform rightHandTransform;
@@ -55,6 +57,7 @@ public class ScriptedLuaBehavior : MonoBehaviour
     {
         scriptText = newScriptText;
         sourceCommand = command;
+        enabled = true;
         CompileAndStart();
     }
 
@@ -102,6 +105,7 @@ public class ScriptedLuaBehavior : MonoBehaviour
     private void DisableAfterError(string message, Exception exception)
     {
         Debug.LogError(message + " on " + name + ": " + exception.Message);
+        Debug.LogError("Failed Lua script:\n" + scriptText);
         enabled = false;
     }
 
