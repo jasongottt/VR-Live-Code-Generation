@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.XR;
 using XRInputDevice = UnityEngine.XR.InputDevice;
@@ -15,12 +16,24 @@ public class RuntimeScriptGenerator : MonoBehaviour
     public Transform headTransform;
     public Transform leftHandTransform;
     public Transform rightHandTransform;
+    public bool useLocalLLM;
+    public bool fallBackToMockOnLLMError = true;
+    public OllamaLuaBehaviorGenerator localLLMGenerator;
 
     [TextArea(8, 24)]
     public string lastGeneratedLuaScript;
 
     private readonly List<XRInputDevice> controllerDevices = new List<XRInputDevice>();
     private bool wasPrimaryButtonPressed;
+    private bool isGeneratingScript;
+
+    private void Awake()
+    {
+        if (localLLMGenerator == null)
+        {
+            localLLMGenerator = GetComponent<OllamaLuaBehaviorGenerator>();
+        }
+    }
 
     private void Update()
     {
@@ -76,7 +89,7 @@ public class RuntimeScriptGenerator : MonoBehaviour
         return wasPressedThisFrame;
     }
 
-    [ContextMenu("Generate Mock Lua Behavior")]
+    [ContextMenu("Generate Lua Behavior")]
     public void GenerateAndAttachSpin()
     {
         if (targetObject == null)
@@ -85,7 +98,61 @@ public class RuntimeScriptGenerator : MonoBehaviour
             return;
         }
 
+        if (useLocalLLM)
+        {
+            if (isGeneratingScript)
+            {
+                Debug.LogWarning("Already waiting for a local LLM behavior script.");
+                return;
+            }
+
+            StartCoroutine(GenerateWithLocalLLM());
+            return;
+        }
+
         string scriptText = MockLuaBehaviorGenerator.Generate(userCommand);
+        AttachLuaBehavior(scriptText);
+    }
+
+    private IEnumerator GenerateWithLocalLLM()
+    {
+        if (localLLMGenerator == null)
+        {
+            Debug.LogWarning("No local LLM generator assigned.");
+
+            if (fallBackToMockOnLLMError)
+            {
+                AttachLuaBehavior(MockLuaBehaviorGenerator.Generate(userCommand));
+            }
+
+            yield break;
+        }
+
+        isGeneratingScript = true;
+        string generatedScript = null;
+        string error = null;
+
+        yield return localLLMGenerator.GenerateScript(userCommand, script => generatedScript = script, message => error = message);
+
+        isGeneratingScript = false;
+
+        if (!string.IsNullOrEmpty(error))
+        {
+            Debug.LogError("Local LLM script generation failed: " + error);
+
+            if (fallBackToMockOnLLMError)
+            {
+                AttachLuaBehavior(MockLuaBehaviorGenerator.Generate(userCommand));
+            }
+
+            yield break;
+        }
+
+        AttachLuaBehavior(generatedScript);
+    }
+
+    private void AttachLuaBehavior(string scriptText)
+    {
         lastGeneratedLuaScript = scriptText;
         ScriptedLuaBehavior behavior = targetObject.AddComponent<ScriptedLuaBehavior>();
         behavior.headTransform = headTransform;
