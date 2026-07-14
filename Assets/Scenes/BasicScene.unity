@@ -676,6 +676,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1594002933}
   - component: {fileID: 1594002934}
+  - component: {fileID: 1594002935}
+  - component: {fileID: 1594002936}
   m_Layer: 0
   m_Name: CodeGenerator
   m_TagString: Untagged
@@ -716,6 +718,48 @@ MonoBehaviour:
   headTransform: {fileID: 0}
   leftHandTransform: {fileID: 0}
   rightHandTransform: {fileID: 0}
+  useLocalLLM: 1
+  fallBackToMockOnLLMError: 1
+  localLLMGenerator: {fileID: 0}
+  lastGeneratedLuaScript: 
+--- !u!114 &1594002935
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1594002932}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 54779f38155dea548a52404a3e198789, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SpeechCommandInput
+  runtimeScriptGenerator: {fileID: 1594002934}
+  startListeningOnEnable: 1
+  generateImmediately: 1
+  restartAfterDictationStops: 1
+  restartDelaySeconds: 0.25
+  lastRecognizedText: 
+--- !u!114 &1594002936
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1594002932}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef743b41a1100714489c4f4e133c90a9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OllamaLuaBehaviorGenerator
+  endpoint: http://localhost:11434/api/generate
+  model: qwen2.5-coder:7b
+  temperature: 0.2
+  requestTimeoutSeconds: 60
+  logPrompt: 0
+  logRawResponse: 0
+  lastPrompt: 
+  lastRawResponse: 
 --- !u!1 &2092139007
 GameObject:
   m_ObjectHideFlags: 0
