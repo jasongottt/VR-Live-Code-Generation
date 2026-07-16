@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.XR;
 using XRInputDevice = UnityEngine.XR.InputDevice;
@@ -14,6 +15,8 @@ using UnityEngine.Windows.Speech;
 public class SpeechCommandInput : MonoBehaviour
 {
     public RuntimeScriptGenerator runtimeScriptGenerator;
+    public TMP_Text lastMessageText;
+    public string lastMessagePrefix = "Last heard: ";
     public bool listenWhileInputHeld = true;
     public bool startListeningOnEnable;
     public bool disableGeneratorInputTrigger = true;
@@ -36,6 +39,7 @@ public class SpeechCommandInput : MonoBehaviour
     private void Reset()
     {
         runtimeScriptGenerator = GetComponent<RuntimeScriptGenerator>();
+        FindLastMessageText();
     }
 
     private void Awake()
@@ -44,6 +48,8 @@ public class SpeechCommandInput : MonoBehaviour
         {
             runtimeScriptGenerator = GetComponent<RuntimeScriptGenerator>();
         }
+
+        FindLastMessageText();
 
         if (runtimeScriptGenerator != null)
         {
@@ -197,6 +203,7 @@ public class SpeechCommandInput : MonoBehaviour
         }
 
         lastRecognizedText = recognizedText.Trim();
+        UpdateLastMessageText();
         Debug.Log("Voice command recognized: " + lastRecognizedText);
 
         if (runtimeScriptGenerator == null)
@@ -206,6 +213,36 @@ public class SpeechCommandInput : MonoBehaviour
         }
 
         runtimeScriptGenerator.SubmitCommand(lastRecognizedText, generateImmediately);
+    }
+
+    private void FindLastMessageText()
+    {
+        if (lastMessageText != null)
+        {
+            return;
+        }
+
+        GameObject lastMessageObject = GameObject.Find("lastmessage");
+
+        if (lastMessageObject == null)
+        {
+            lastMessageObject = GameObject.Find("LastMessage");
+        }
+
+        if (lastMessageObject != null)
+        {
+            lastMessageText = lastMessageObject.GetComponent<TMP_Text>();
+        }
+    }
+
+    private void UpdateLastMessageText()
+    {
+        FindLastMessageText();
+
+        if (lastMessageText != null)
+        {
+            lastMessageText.text = lastMessagePrefix + lastRecognizedText;
+        }
     }
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
