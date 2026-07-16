@@ -1,5 +1,5 @@
-using System.Collections.Generic;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR;
 using XRInputDevice = UnityEngine.XR.InputDevice;
@@ -11,24 +11,31 @@ using UnityEngine.InputSystem;
 public class RuntimeScriptGenerator : MonoBehaviour
 {
     public GameObject targetObject;
-    public string userCommand = "make this object bounce";
+
+    [TextArea(2, 6)]
+    public string userCommand;
+
     public XRNode controllerNode = XRNode.RightHand;
     public Transform headTransform;
     public Transform leftHandTransform;
     public Transform rightHandTransform;
     public bool generateOnInputPress = true;
-    public bool useLocalLLM;
     public bool refineSameChannelBehaviors = true;
-    public bool fallBackToMockOnLLMError = true;
     public OllamaLuaBehaviorGenerator localLLMGenerator;
+    public BehaviorManager behaviorManager;
+    public BehaviorAction lastBehaviorAction;
     public BehaviorChannel lastBehaviorChannel;
+
+    [TextArea(2, 6)]
+    public string lastDecisionStatus;
 
     [TextArea(8, 24)]
     public string lastGeneratedLuaScript;
 
     private readonly List<XRInputDevice> controllerDevices = new List<XRInputDevice>();
     private bool wasPrimaryButtonPressed;
-    private bool isGeneratingScript;
+    private bool isGeneratingDecision;
+    private int generationVersion;
 
     private void Awake()
     {
@@ -36,13 +43,15 @@ public class RuntimeScriptGenerator : MonoBehaviour
         {
             localLLMGenerator = GetComponent<OllamaLuaBehaviorGenerator>();
         }
+
+        EnsureBehaviorManager();
     }
 
     private void Update()
     {
         if (generateOnInputPress && WasGenerateInputPressed())
         {
-            GenerateAndAttachSpin();
+            GenerateAndApplyBehavior();
         }
     }
 
@@ -75,7 +84,7 @@ public class RuntimeScriptGenerator : MonoBehaviour
         bool isPressed = false;
 
         controllerDevices.Clear();
-        UnityEngine.XR.InputDevices.GetDevicesAtXRNode(controllerNode, controllerDevices);
+        InputDevices.GetDevicesAtXRNode(controllerNode, controllerDevices);
 
         foreach (XRInputDevice device in controllerDevices)
         {
@@ -88,12 +97,11 @@ public class RuntimeScriptGenerator : MonoBehaviour
 
         bool wasPressedThisFrame = isPressed && !wasPrimaryButtonPressed;
         wasPrimaryButtonPressed = isPressed;
-
         return wasPressedThisFrame;
     }
 
-    [ContextMenu("Generate Lua Behavior")]
-    public void GenerateAndAttachSpin()
+    [ContextMenu("Generate LLM Behavior Decision")]
+    public void GenerateAndApplyBehavior()
     {
         if (targetObject == null)
         {
@@ -101,133 +109,132 @@ public class RuntimeScriptGenerator : MonoBehaviour
             return;
         }
 
-        string command = userCommand;
-        BehaviorChannel behaviorChannel = BehaviorChannelClassifier.Classify(command);
-        lastBehaviorChannel = behaviorChannel;
-        ScriptedLuaBehavior existingBehavior = FindExistingBehaviorForChannel(behaviorChannel);
-
-        if (useLocalLLM)
+        if (string.IsNullOrWhiteSpace(userCommand))
         {
-            if (isGeneratingScript)
-            {
-                Debug.LogWarning("Already waiting for a local LLM behavior script.");
-                return;
-            }
-
-            StartCoroutine(GenerateWithLocalLLM(command, behaviorChannel, existingBehavior));
+            Debug.LogWarning("Ignored empty runtime command.");
             return;
         }
 
-        string scriptText = MockLuaBehaviorGenerator.Generate(command);
-        AttachOrRefineLuaBehavior(scriptText, command, behaviorChannel, existingBehavior);
-    }
-
-    private IEnumerator GenerateWithLocalLLM(string command, BehaviorChannel behaviorChannel, ScriptedLuaBehavior existingBehavior)
-    {
         if (localLLMGenerator == null)
         {
-            Debug.LogWarning("No local LLM generator assigned.");
-
-            if (fallBackToMockOnLLMError)
-            {
-                AttachOrRefineLuaBehavior(MockLuaBehaviorGenerator.Generate(command), command, behaviorChannel, existingBehavior);
-            }
-
-            yield break;
+            Debug.LogError("No OllamaLuaBehaviorGenerator assigned. All behavior decisions require the LLM.");
+            return;
         }
 
-        isGeneratingScript = true;
-        string generatedScript = null;
+        if (isGeneratingDecision)
+        {
+            Debug.LogWarning("Already waiting for a local LLM behavior decision.");
+            return;
+        }
+
+        EnsureBehaviorManager();
+        ScriptedLuaBehavior[] activeBehaviors = behaviorManager.GetActiveBehaviors(targetObject);
+        int requestVersion = ++generationVersion;
+        isGeneratingDecision = true;
+        StartCoroutine(GenerateWithLocalLLM(userCommand.Trim(), activeBehaviors, requestVersion));
+    }
+
+    private IEnumerator GenerateWithLocalLLM(
+        string command,
+        ScriptedLuaBehavior[] activeBehaviors,
+        int requestVersion)
+    {
+        BehaviorDecision decision = null;
         string error = null;
 
-        string existingCommand = existingBehavior != null ? existingBehavior.sourceCommand : null;
-        string existingScript = existingBehavior != null ? existingBehavior.scriptText : null;
-
-        yield return localLLMGenerator.GenerateScript(
+        yield return localLLMGenerator.GenerateDecision(
             command,
-            behaviorChannel,
-            existingCommand,
-            existingScript,
-            script => generatedScript = script,
+            activeBehaviors,
+            result => decision = result,
             message => error = message);
 
-        isGeneratingScript = false;
+        isGeneratingDecision = false;
+
+        if (requestVersion != generationVersion)
+        {
+            Debug.Log("Discarded an outdated local LLM behavior decision.");
+            yield break;
+        }
 
         if (!string.IsNullOrEmpty(error))
         {
-            Debug.LogError("Local LLM script generation failed: " + error);
-
-            if (fallBackToMockOnLLMError)
-            {
-                AttachOrRefineLuaBehavior(MockLuaBehaviorGenerator.Generate(command), command, behaviorChannel, existingBehavior);
-            }
-
+            lastDecisionStatus = "LLM decision failed: " + error;
+            Debug.LogError(lastDecisionStatus);
             yield break;
         }
 
-        AttachOrRefineLuaBehavior(generatedScript, command, behaviorChannel, existingBehavior);
+        ApplyDecision(decision, command);
     }
 
-    private void AttachOrRefineLuaBehavior(string scriptText, string command, BehaviorChannel behaviorChannel, ScriptedLuaBehavior existingBehavior)
+    private void ApplyDecision(BehaviorDecision decision, string command)
     {
-        lastGeneratedLuaScript = scriptText;
-
-        if (existingBehavior != null)
+        if (decision == null)
         {
-            existingBehavior.revisionCount++;
-            existingBehavior.behaviorChannel = behaviorChannel;
-            existingBehavior.headTransform = headTransform;
-            existingBehavior.leftHandTransform = leftHandTransform;
-            existingBehavior.rightHandTransform = rightHandTransform;
-            existingBehavior.LoadScript(scriptText, CombineCommandHistory(existingBehavior.sourceCommand, command));
-
-            Debug.Log("Refined " + behaviorChannel + " Lua behavior on " + targetObject.name + " from command: " + command);
+            lastDecisionStatus = "The LLM returned no behavior decision.";
+            Debug.LogError(lastDecisionStatus);
             return;
         }
 
-        ScriptedLuaBehavior behavior = targetObject.AddComponent<ScriptedLuaBehavior>();
-        behavior.behaviorChannel = behaviorChannel;
-        behavior.headTransform = headTransform;
-        behavior.leftHandTransform = leftHandTransform;
-        behavior.rightHandTransform = rightHandTransform;
-        behavior.LoadScript(scriptText, command);
+        lastBehaviorAction = decision.action;
+        lastBehaviorChannel = decision.channel;
 
-        Debug.Log("Attached " + behaviorChannel + " Lua behavior to " + targetObject.name + " from command: " + command);
+        if (decision.action != BehaviorAction.Apply)
+        {
+            behaviorManager.ExecuteManagementDecision(decision, targetObject);
+            lastDecisionStatus = behaviorManager.lastStatus;
+            return;
+        }
+
+        if (!behaviorManager.TryApplyBehavior(
+                targetObject,
+                decision,
+                command,
+                refineSameChannelBehaviors,
+                headTransform,
+                leftHandTransform,
+                rightHandTransform,
+                out ScriptedLuaBehavior behavior,
+                out string error))
+        {
+            lastDecisionStatus = error;
+            Debug.LogError(error);
+            return;
+        }
+
+        lastGeneratedLuaScript = decision.scriptText;
+        lastDecisionStatus = behaviorManager.lastStatus;
+        Debug.Log(lastDecisionStatus + " Target: " + behavior.name + ". Command: " + command);
     }
 
-    private ScriptedLuaBehavior FindExistingBehaviorForChannel(BehaviorChannel behaviorChannel)
+    private void EnsureBehaviorManager()
     {
-        if (!refineSameChannelBehaviors || behaviorChannel == BehaviorChannel.General)
+        if (behaviorManager == null)
         {
-            return null;
+            behaviorManager = GetComponent<BehaviorManager>();
         }
 
-        ScriptedLuaBehavior[] behaviors = targetObject.GetComponents<ScriptedLuaBehavior>();
-
-        for (int i = behaviors.Length - 1; i >= 0; i--)
+        if (behaviorManager == null)
         {
-            if (behaviors[i].behaviorChannel == behaviorChannel)
-            {
-                return behaviors[i];
-            }
+            behaviorManager = gameObject.AddComponent<BehaviorManager>();
         }
-
-        return null;
     }
 
-    private static string CombineCommandHistory(string existingCommand, string newCommand)
+    [ContextMenu("Undo Last Behavior Change")]
+    public void UndoLastBehaviorChange()
     {
-        if (string.IsNullOrWhiteSpace(existingCommand))
-        {
-            return newCommand;
-        }
+        EnsureBehaviorManager();
+        generationVersion++;
+        behaviorManager.UndoLastChange(targetObject);
+        lastDecisionStatus = behaviorManager.lastStatus;
+    }
 
-        if (existingCommand.Contains(" + "))
-        {
-            return existingCommand + " + " + newCommand;
-        }
-
-        return existingCommand + " + " + newCommand;
+    [ContextMenu("Clear All Behaviors")]
+    public void ClearAllBehaviors()
+    {
+        EnsureBehaviorManager();
+        generationVersion++;
+        behaviorManager.ClearAll(targetObject);
+        lastDecisionStatus = behaviorManager.lastStatus;
     }
 
     public void SubmitCommand(string command, bool generateImmediately = true)
@@ -242,7 +249,7 @@ public class RuntimeScriptGenerator : MonoBehaviour
 
         if (generateImmediately)
         {
-            GenerateAndAttachSpin();
+            GenerateAndApplyBehavior();
         }
     }
 }
