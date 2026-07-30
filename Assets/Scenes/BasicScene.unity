@@ -494,6 +494,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7054646180837666701, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -637,7 +641,7 @@ RectTransform:
   m_GameObject: {fileID: 854795149}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 5.93}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0.64645, y: 0.64645, z: 0.64645}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 255227446}
@@ -647,7 +651,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: -0.62, y: 2.87}
+  m_AnchoredPosition: {x: -1.0292, y: 3.2368}
   m_SizeDelta: {x: 12.75, y: 9.25}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &1075461560
@@ -1037,11 +1041,12 @@ MonoBehaviour:
   leftHandTransform: {fileID: 0}
   rightHandTransform: {fileID: 0}
   generateOnInputPress: 1
-  useLocalLLM: 1
   refineSameChannelBehaviors: 1
-  fallBackToMockOnLLMError: 1
   localLLMGenerator: {fileID: 0}
+  behaviorManager: {fileID: 0}
+  lastBehaviorAction: 0
   lastBehaviorChannel: 0
+  lastDecisionStatus: 
   lastGeneratedLuaScript: 
 --- !u!114 &1594002935
 MonoBehaviour:
@@ -1056,6 +1061,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SpeechCommandInput
   runtimeScriptGenerator: {fileID: 1594002934}
+  lastMessageText: {fileID: 0}
+  lastMessagePrefix: 'Last heard: '
   listenWhileInputHeld: 1
   startListeningOnEnable: 1
   disableGeneratorInputTrigger: 1
@@ -1080,10 +1087,15 @@ MonoBehaviour:
   model: qwen2.5-coder:7b
   temperature: 0
   requestTimeoutSeconds: 60
+  maxRepairAttempts: 2
+  maxGeneratedTokens: 768
   logPrompt: 0
   logRawResponse: 0
+  lastAttemptCount: 0
   lastPrompt: 
   lastRawResponse: 
+  lastDecisionJson: 
+  lastValidationError: 
 --- !u!1 &1723410618
 GameObject:
   m_ObjectHideFlags: 0
