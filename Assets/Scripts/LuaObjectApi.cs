@@ -33,6 +33,16 @@ public sealed class LuaObjectApi
         get { return getForward(); }
     }
 
+    public LuaVector3 getRotationEuler()
+    {
+        return new LuaVector3(target.transform.eulerAngles);
+    }
+
+    public LuaVector3 rotationEuler
+    {
+        get { return getRotationEuler(); }
+    }
+
     public void setPosition(float x, float y, float z)
     {
         target.transform.position = new Vector3(x, y, z);
@@ -46,6 +56,11 @@ public sealed class LuaObjectApi
     public void rotate(float x, float y, float z)
     {
         target.transform.Rotate(new Vector3(x, y, z), Space.Self);
+    }
+
+    public void setRotationEuler(float x, float y, float z)
+    {
+        target.transform.eulerAngles = new Vector3(x, y, z);
     }
 
     public void lookAt(float x, float y, float z)

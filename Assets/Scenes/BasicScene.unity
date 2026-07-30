@@ -1078,7 +1078,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OllamaLuaBehaviorGenerator
   endpoint: http://localhost:11434/api/generate
   model: qwen2.5-coder:7b
-  temperature: 0.2
+  temperature: 0
   requestTimeoutSeconds: 60
   logPrompt: 0
   logRawResponse: 0

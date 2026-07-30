@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using MoonSharp.Interpreter;
 
@@ -21,6 +22,77 @@ public static class LuaScriptValidator
         "rawget",
         "rawset"
     };
+
+    private static readonly Dictionary<string, HashSet<string>> AllowedApiMethods =
+        new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
+        {
+            {
+                "object",
+                new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "getPosition",
+                    "getForward",
+                    "getRotationEuler",
+                    "setPosition",
+                    "translate",
+                    "rotate",
+                    "setRotationEuler",
+                    "lookAt",
+                    "moveToward",
+                    "getScale",
+                    "setScale",
+                    "setColor",
+                    "setEmission",
+                    "setVisible"
+                }
+            },
+            {
+                "player",
+                new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "getHeadPosition",
+                    "getPosition",
+                    "getHeadForward",
+                    "getForward",
+                    "isTracked"
+                }
+            },
+            {
+                "world",
+                new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "getHeadPosition",
+                    "getPosition",
+                    "getHeadForward",
+                    "getForward",
+                    "isTracked"
+                }
+            },
+            {
+                "leftHand",
+                new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "getPosition",
+                    "getForward",
+                    "getRotationEuler",
+                    "isTracked"
+                }
+            },
+            {
+                "rightHand",
+                new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "getPosition",
+                    "getForward",
+                    "getRotationEuler",
+                    "isTracked"
+                }
+            }
+        };
+
+    private static readonly Regex ApiMethodCallPattern = new Regex(
+        @"\b(object|player|world|leftHand|rightHand)\s*[:.]\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+        RegexOptions.CultureInvariant);
 
     public static bool IsSafe(string scriptText, out string error)
     {
@@ -47,6 +119,11 @@ public static class LuaScriptValidator
             return false;
         }
 
+        if (!UsesOnlyAllowedApiMethods(scriptText, out error))
+        {
+            return false;
+        }
+
         try
         {
             Script script = new Script(CoreModules.Preset_SoftSandbox);
@@ -55,6 +132,32 @@ public static class LuaScriptValidator
         catch (Exception exception)
         {
             error = "Generated Lua script did not compile: " + exception.Message;
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool UsesOnlyAllowedApiMethods(string scriptText, out string error)
+    {
+        MatchCollection calls = ApiMethodCallPattern.Matches(scriptText);
+
+        foreach (Match call in calls)
+        {
+            string receiver = call.Groups[1].Value;
+            string method = call.Groups[2].Value;
+            HashSet<string> allowedMethods = AllowedApiMethods[receiver];
+
+            if (allowedMethods.Contains(method))
+            {
+                continue;
+            }
+
+            error =
+                "Generated Lua script called unsupported API method " +
+                receiver + ":" + method + "(). Allowed " + receiver +
+                " methods: " + string.Join(", ", allowedMethods) + ".";
             return false;
         }
 
