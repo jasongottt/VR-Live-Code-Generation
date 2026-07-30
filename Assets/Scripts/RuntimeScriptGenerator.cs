@@ -139,13 +139,13 @@ public class RuntimeScriptGenerator : MonoBehaviour
         ScriptedLuaBehavior[] activeBehaviors,
         int requestVersion)
     {
-        BehaviorDecision decision = null;
+        BehaviorDecision[] decisions = null;
         string error = null;
 
         yield return localLLMGenerator.GenerateDecision(
             command,
             activeBehaviors,
-            result => decision = result,
+            result => decisions = result,
             message => error = message);
 
         isGeneratingDecision = false;
@@ -163,47 +163,77 @@ public class RuntimeScriptGenerator : MonoBehaviour
             yield break;
         }
 
-        ApplyDecision(decision, command);
+        ApplyDecisions(decisions, command);
     }
 
-    private void ApplyDecision(BehaviorDecision decision, string command)
+    private void ApplyDecisions(BehaviorDecision[] decisions, string command)
     {
-        if (decision == null)
+        if (decisions == null || decisions.Length == 0)
         {
-            lastDecisionStatus = "The LLM returned no behavior decision.";
+            lastDecisionStatus = "The LLM returned no behavior decisions.";
             Debug.LogError(lastDecisionStatus);
             return;
         }
 
-        lastBehaviorAction = decision.action;
-        lastBehaviorChannel = decision.channel;
+        List<string> statuses = new List<string>();
+        List<string> generatedScripts = new List<string>();
 
-        if (decision.action != BehaviorAction.Apply)
+        for (int i = 0; i < decisions.Length; i++)
         {
-            behaviorManager.ExecuteManagementDecision(decision, targetObject);
-            lastDecisionStatus = behaviorManager.lastStatus;
-            return;
+            BehaviorDecision decision = decisions[i];
+
+            if (decision == null)
+            {
+                lastDecisionStatus = "Behavior decision " + (i + 1) + " was null.";
+                Debug.LogError(lastDecisionStatus);
+                return;
+            }
+
+            lastBehaviorAction = decision.action;
+            lastBehaviorChannel = decision.channel;
+
+            if (decision.action != BehaviorAction.Apply)
+            {
+                behaviorManager.ExecuteManagementDecision(decision, targetObject);
+                statuses.Add(behaviorManager.lastStatus);
+                continue;
+            }
+
+            if (!behaviorManager.TryApplyBehavior(
+                    targetObject,
+                    decision,
+                    command,
+                    refineSameChannelBehaviors,
+                    headTransform,
+                    leftHandTransform,
+                    rightHandTransform,
+                    out ScriptedLuaBehavior behavior,
+                    out string error))
+            {
+                statuses.Add(error);
+                lastDecisionStatus =
+                    "Applied " + i + " of " + decisions.Length +
+                    " decisions before failure. " + error;
+                Debug.LogError(lastDecisionStatus);
+                return;
+            }
+
+            statuses.Add(behaviorManager.lastStatus);
+            generatedScripts.Add(
+                "-- " + decision.channel + " behavior\n" + decision.scriptText);
+            Debug.Log(
+                behaviorManager.lastStatus + " Target: " + behavior.name +
+                ". Command: " + command);
         }
 
-        if (!behaviorManager.TryApplyBehavior(
-                targetObject,
-                decision,
-                command,
-                refineSameChannelBehaviors,
-                headTransform,
-                leftHandTransform,
-                rightHandTransform,
-                out ScriptedLuaBehavior behavior,
-                out string error))
+        if (generatedScripts.Count > 0)
         {
-            lastDecisionStatus = error;
-            Debug.LogError(error);
-            return;
+            lastGeneratedLuaScript = string.Join("\n\n", generatedScripts.ToArray());
         }
 
-        lastGeneratedLuaScript = decision.scriptText;
-        lastDecisionStatus = behaviorManager.lastStatus;
-        Debug.Log(lastDecisionStatus + " Target: " + behavior.name + ". Command: " + command);
+        lastDecisionStatus =
+            "Applied " + decisions.Length + " decision(s). " +
+            string.Join(" ", statuses.ToArray());
     }
 
     private void EnsureBehaviorManager()

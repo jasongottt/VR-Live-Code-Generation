@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -39,7 +40,7 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
     public IEnumerator GenerateDecision(
         string userCommand,
         ScriptedLuaBehavior[] activeBehaviors,
-        Action<BehaviorDecision> onSuccess,
+        Action<BehaviorDecision[]> onSuccess,
         Action<string> onError)
     {
         if (string.IsNullOrWhiteSpace(userCommand))
@@ -80,10 +81,13 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
 
             lastDecisionJson = SanitizeJsonResponse(generatedJson);
 
-            if (TryParseDecision(lastDecisionJson, out BehaviorDecision decision, out string validationError))
+            if (TryParseDecisions(
+                    lastDecisionJson,
+                    out BehaviorDecision[] decisions,
+                    out string validationError))
             {
                 lastValidationError = string.Empty;
-                onSuccess?.Invoke(decision);
+                onSuccess?.Invoke(decisions);
                 yield break;
             }
 
@@ -113,7 +117,7 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
         {
             model = model,
             prompt = prompt,
-            format = new OllamaDecisionJsonSchema(),
+            format = new OllamaDecisionEnvelopeJsonSchema(),
             stream = false,
             options = new OllamaOptions
             {
@@ -163,34 +167,92 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
         onSuccess?.Invoke(response != null ? response.response : null);
     }
 
-    private static bool TryParseDecision(
+    private static bool TryParseDecisions(
         string decisionJson,
+        out BehaviorDecision[] decisions,
+        out string error)
+    {
+        decisions = null;
+
+        if (string.IsNullOrWhiteSpace(decisionJson))
+        {
+            error = "The LLM returned an empty behavior decision set.";
+            return false;
+        }
+
+        OllamaDecisionEnvelopePayload envelope;
+
+        try
+        {
+            envelope = JsonUtility.FromJson<OllamaDecisionEnvelopePayload>(decisionJson);
+        }
+        catch (Exception exception)
+        {
+            error = "The LLM decision set was not valid JSON: " + exception.Message;
+            return false;
+        }
+
+        if (envelope == null || envelope.decisions == null || envelope.decisions.Length == 0)
+        {
+            error = "The LLM response must contain at least one item in decisions.";
+            return false;
+        }
+
+        if (envelope.decisions.Length > 6)
+        {
+            error = "The LLM returned more than 6 behavior decisions for one command.";
+            return false;
+        }
+
+        List<BehaviorDecision> parsedDecisions = new List<BehaviorDecision>();
+        HashSet<BehaviorChannel> applyChannels = new HashSet<BehaviorChannel>();
+
+        for (int i = 0; i < envelope.decisions.Length; i++)
+        {
+            if (!TryParseDecisionPayload(
+                    envelope.decisions[i],
+                    out BehaviorDecision decision,
+                    out string itemError))
+            {
+                error = "Decision " + (i + 1) + " is invalid: " + itemError;
+                return false;
+            }
+
+            if (decision.action == BehaviorAction.Apply &&
+                !applyChannels.Add(decision.channel))
+            {
+                error =
+                    "Decision " + (i + 1) + " duplicates the Apply channel " +
+                    decision.channel + ". Combine same-channel intent into one script.";
+                return false;
+            }
+
+            if ((decision.action == BehaviorAction.Undo ||
+                 decision.action == BehaviorAction.ClearAll) &&
+                envelope.decisions.Length != 1)
+            {
+                error = decision.action + " must be the only decision in the response.";
+                return false;
+            }
+
+            parsedDecisions.Add(decision);
+        }
+
+        decisions = parsedDecisions.ToArray();
+        error = null;
+        return true;
+    }
+
+    private static bool TryParseDecisionPayload(
+        OllamaDecisionPayload payload,
         out BehaviorDecision decision,
         out string error)
     {
         decision = null;
 
-        if (string.IsNullOrWhiteSpace(decisionJson))
-        {
-            error = "The LLM returned an empty behavior decision.";
-            return false;
-        }
-
-        OllamaDecisionPayload payload;
-
-        try
-        {
-            payload = JsonUtility.FromJson<OllamaDecisionPayload>(decisionJson);
-        }
-        catch (Exception exception)
-        {
-            error = "The LLM decision was not valid JSON: " + exception.Message;
-            return false;
-        }
-
         if (payload == null || !Enum.TryParse(payload.action, true, out BehaviorAction action))
         {
-            error = "The LLM returned an unsupported behavior action: " +
+            error = "Unsupported behavior action: " +
                 (payload != null ? payload.action : "null");
             return false;
         }
@@ -200,7 +262,7 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
         if ((action == BehaviorAction.Apply || action == BehaviorAction.ClearChannel) &&
             !Enum.TryParse(payload.channel, true, out channel))
         {
-            error = "The LLM returned an unsupported behavior channel: " + payload.channel;
+            error = "Unsupported behavior channel: " + payload.channel;
             return false;
         }
 
@@ -231,11 +293,22 @@ public class OllamaLuaBehaviorGenerator : MonoBehaviour
 @"You are the sole natural-language planner and Lua code generator for a Unity VR behavior sandbox. You generate behaviors for a singular Unity cube GameObject.
 The application does not classify the user's wording. You must infer the requested action and behavior channel semantically.
 
-Return exactly one JSON object and no other text. The fields are:
+Return exactly one JSON object and no other text. Its only field is:
+- decisions: a JSON array containing between 1 and 6 decision objects
+
+Every decision object has these fields:
 - action: exactly one of Apply, Undo, ClearChannel, ClearAll
 - channel: exactly one of General, Appearance, Position, Rotation, Scale, Attention
 - luaLines: a JSON array containing one Lua source line per string for Apply, otherwise an empty array
-- An Apply response with missing or empty luaLines is invalid. Always return the complete replacement script for Apply, including refinements.
+- An Apply decision with missing or empty luaLines is invalid. Always return the complete replacement script for Apply, including refinements.
+
+Composition rules:
+- Split independent requested effects into separate Apply decisions by channel.
+- Return at most one Apply decision per channel. Combine effects only when they truly write the same channel.
+- Do not force a multi-channel command into General when its effects fit specialized channels.
+- Preserve the order in which the requested effects should be applied.
+- Undo and ClearAll must each be the only decision in the decisions array.
+- Example: ""get red and bouncy"" requires two Apply decisions: Appearance owns red, and Position owns bouncing.
 
 Action meanings:
 - Apply creates a behavior or completely replaces the active behavior in the selected channel.
@@ -251,7 +324,7 @@ Channel ownership:
 - Attention owns orientation toward a tracked target.
 - General is only for behavior that cannot be represented by one specialized channel or intentionally spans multiple output domains.
 
-Current active behaviors are included below. For Apply, if the selected channel already exists, return one complete replacement script that satisfies the new request in the context of that existing behavior. Preserve prior intent unless the new request changes or removes it. When a user changes only part of a channel, use Apply with a revised script instead of clearing the entire channel. Compute one coherent final output for a channel rather than issuing competing writes to the same property.
+Current active behaviors are included below. For each Apply decision, if the selected channel already exists, return one complete replacement script that satisfies that part of the new request in the context of that existing behavior. Preserve prior intent unless the new request changes or removes it. When a user changes only part of a channel, use Apply with a revised script instead of clearing the entire channel. Compute one coherent final output per channel.
 
 Write optional function start() and/or function update(dt).
 The script controls one selected object.
@@ -391,6 +464,30 @@ function update(dt)
     object:setPosition(basePosition.x, y, basePosition.z)
 end
 
+Example complete response for ""get red and bouncy"":
+{""decisions"":[
+  {""action"":""Apply"",""channel"":""Appearance"",""luaLines"":[
+    ""local baseColor"",
+    ""function start()"",
+    ""    baseColor = object:getColor()"",
+    ""    object:setColor(1, 0, 0, baseColor.a)"",
+    ""end""
+  ]},
+  {""action"":""Apply"",""channel"":""Position"",""luaLines"":[
+    ""local basePosition"",
+    ""local amplitude = 0.25"",
+    ""local cyclesPerSecond = 0.75"",
+    ""function start()"",
+    ""    basePosition = object:getPosition()"",
+    ""end"",
+    ""function update(dt)"",
+    ""    local phase = time * 2.0 * math.pi * cyclesPerSecond"",
+    ""    local y = basePosition.y + math.sin(phase) * amplitude"",
+    ""    object:setPosition(basePosition.x, y, basePosition.z)"",
+    ""end""
+  ]}
+]}
+
 Example of matching the object's rotation to the left hand:
 function update(dt)
     if leftHand:isTracked() then
@@ -436,10 +533,11 @@ Your previous JSON response failed validation and must not be repeated.
 VALIDATION ERROR
 " + NormalizePromptData(validationError) + @"
 
-Return one corrected JSON object that satisfies the original request and output contract.
-- Keep the semantically correct action and channel unless they caused the validation error.
-- If action is Apply, luaLines MUST contain the complete replacement Lua script with one source line per array item.
-- Do not change Apply to another action merely to avoid generating the script.
+Return one corrected JSON object with a decisions array that satisfies the original request and output contract.
+- Keep every semantically correct decision and channel unless it caused the validation error.
+- If a decision action is Apply, luaLines MUST contain its complete replacement Lua script with one source line per array item.
+- Do not merge independent channels merely to avoid returning multiple decisions.
+- Do not change Apply to another action merely to avoid generating a script.
 - Do not return a patch, explanation, Markdown, or empty luaLines for Apply.
 - Correct every issue described by the validation error.";
     }
@@ -558,23 +656,50 @@ Return one corrected JSON object that satisfies the original request and output 
     {
         public string model;
         public string prompt;
-        public OllamaDecisionJsonSchema format;
+        public OllamaDecisionEnvelopeJsonSchema format;
         public bool stream;
         public OllamaOptions options;
     }
 
     [Serializable]
-    private sealed class OllamaDecisionJsonSchema
+    private sealed class OllamaDecisionEnvelopeJsonSchema
     {
         public string type = "object";
-        public OllamaDecisionJsonProperties properties =
-            new OllamaDecisionJsonProperties();
+        public OllamaDecisionEnvelopeJsonProperties properties =
+            new OllamaDecisionEnvelopeJsonProperties();
+        public string[] required = { "decisions" };
+        public bool additionalProperties = false;
+    }
+
+    [Serializable]
+    private sealed class OllamaDecisionEnvelopeJsonProperties
+    {
+        public OllamaDecisionArrayJsonSchema decisions =
+            new OllamaDecisionArrayJsonSchema();
+    }
+
+    [Serializable]
+    private sealed class OllamaDecisionArrayJsonSchema
+    {
+        public string type = "array";
+        public int minItems = 1;
+        public int maxItems = 6;
+        public OllamaDecisionItemJsonSchema items =
+            new OllamaDecisionItemJsonSchema();
+    }
+
+    [Serializable]
+    private sealed class OllamaDecisionItemJsonSchema
+    {
+        public string type = "object";
+        public OllamaDecisionItemJsonProperties properties =
+            new OllamaDecisionItemJsonProperties();
         public string[] required = { "action", "channel", "luaLines" };
         public bool additionalProperties = false;
     }
 
     [Serializable]
-    private sealed class OllamaDecisionJsonProperties
+    private sealed class OllamaDecisionItemJsonProperties
     {
         public OllamaEnumStringJsonSchema action = new OllamaEnumStringJsonSchema(
             "Apply",
@@ -636,5 +761,11 @@ Return one corrected JSON object that satisfies the original request and output 
         public string channel;
         public string[] luaLines;
         public string lua;
+    }
+
+    [Serializable]
+    private sealed class OllamaDecisionEnvelopePayload
+    {
+        public OllamaDecisionPayload[] decisions;
     }
 }
