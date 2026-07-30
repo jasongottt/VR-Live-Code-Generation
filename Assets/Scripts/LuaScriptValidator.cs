@@ -41,8 +41,11 @@ public static class LuaScriptValidator
                     "moveToward",
                     "getScale",
                     "setScale",
+                    "getColor",
                     "setColor",
+                    "getEmission",
                     "setEmission",
+                    "isVisible",
                     "setVisible"
                 }
             },
@@ -75,6 +78,12 @@ public static class LuaScriptValidator
                     "getPosition",
                     "getForward",
                     "getRotationEuler",
+                    "getVelocity",
+                    "getAngularVelocity",
+                    "getGrip",
+                    "getTrigger",
+                    "isPrimaryPressed",
+                    "isSecondaryPressed",
                     "isTracked"
                 }
             },
@@ -85,6 +94,12 @@ public static class LuaScriptValidator
                     "getPosition",
                     "getForward",
                     "getRotationEuler",
+                    "getVelocity",
+                    "getAngularVelocity",
+                    "getGrip",
+                    "getTrigger",
+                    "isPrimaryPressed",
+                    "isSecondaryPressed",
                     "isTracked"
                 }
             }

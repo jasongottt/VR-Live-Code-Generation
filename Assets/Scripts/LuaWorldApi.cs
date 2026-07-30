@@ -75,6 +75,7 @@ public sealed class LuaControllerApi
     private readonly XRNode node;
     private readonly Transform fallbackTransform;
     private readonly List<XRInputDevice> devices = new List<XRInputDevice>();
+    private int devicesFrame = -1;
 
     public LuaControllerApi(XRNode node, Transform fallbackTransform)
     {
@@ -127,10 +128,47 @@ public sealed class LuaControllerApi
         get { return getRotationEuler(); }
     }
 
+    public LuaVector3 getVelocity()
+    {
+        return TryGetDeviceVector3(CommonUsages.deviceVelocity, out Vector3 velocity)
+            ? new LuaVector3(velocity)
+            : new LuaVector3(Vector3.zero);
+    }
+
+    public LuaVector3 getAngularVelocity()
+    {
+        return TryGetDeviceVector3(CommonUsages.deviceAngularVelocity, out Vector3 velocity)
+            ? new LuaVector3(velocity)
+            : new LuaVector3(Vector3.zero);
+    }
+
+    public float getGrip()
+    {
+        return TryGetDeviceFloat(CommonUsages.grip, out float grip)
+            ? Mathf.Clamp01(grip)
+            : 0f;
+    }
+
+    public float getTrigger()
+    {
+        return TryGetDeviceFloat(CommonUsages.trigger, out float trigger)
+            ? Mathf.Clamp01(trigger)
+            : 0f;
+    }
+
+    public bool isPrimaryPressed()
+    {
+        return TryGetDeviceBool(CommonUsages.primaryButton, out bool pressed) && pressed;
+    }
+
+    public bool isSecondaryPressed()
+    {
+        return TryGetDeviceBool(CommonUsages.secondaryButton, out bool pressed) && pressed;
+    }
+
     public bool isTracked()
     {
-        devices.Clear();
-        InputDevices.GetDevicesAtXRNode(node, devices);
+        RefreshDevices();
 
         foreach (XRInputDevice device in devices)
         {
@@ -145,8 +183,7 @@ public sealed class LuaControllerApi
 
     private bool TryGetDevicePosition(out Vector3 position)
     {
-        devices.Clear();
-        InputDevices.GetDevicesAtXRNode(node, devices);
+        RefreshDevices();
 
         foreach (XRInputDevice device in devices)
         {
@@ -162,8 +199,7 @@ public sealed class LuaControllerApi
 
     private bool TryGetDeviceRotation(out Quaternion rotation)
     {
-        devices.Clear();
-        InputDevices.GetDevicesAtXRNode(node, devices);
+        RefreshDevices();
 
         foreach (XRInputDevice device in devices)
         {
@@ -176,10 +212,128 @@ public sealed class LuaControllerApi
         rotation = Quaternion.identity;
         return false;
     }
+
+    private bool TryGetDeviceVector3(
+        InputFeatureUsage<Vector3> usage,
+        out Vector3 value)
+    {
+        RefreshDevices();
+
+        foreach (XRInputDevice device in devices)
+        {
+            if (device.TryGetFeatureValue(usage, out value))
+            {
+                return true;
+            }
+        }
+
+        value = Vector3.zero;
+        return false;
+    }
+
+    private bool TryGetDeviceFloat(
+        InputFeatureUsage<float> usage,
+        out float value)
+    {
+        RefreshDevices();
+
+        foreach (XRInputDevice device in devices)
+        {
+            if (device.TryGetFeatureValue(usage, out value))
+            {
+                return true;
+            }
+        }
+
+        value = 0f;
+        return false;
+    }
+
+    private bool TryGetDeviceBool(
+        InputFeatureUsage<bool> usage,
+        out bool value)
+    {
+        RefreshDevices();
+
+        foreach (XRInputDevice device in devices)
+        {
+            if (device.TryGetFeatureValue(usage, out value))
+            {
+                return true;
+            }
+        }
+
+        value = false;
+        return false;
+    }
+
+    private void RefreshDevices()
+    {
+        if (devicesFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        devices.Clear();
+        InputDevices.GetDevicesAtXRNode(node, devices);
+        devicesFrame = Time.frameCount;
+    }
 }
 
 public static class LuaMathApi
 {
+    public static LuaVector3 vec3(float x, float y, float z)
+    {
+        return new LuaVector3(new Vector3(x, y, z));
+    }
+
+    public static LuaVector3 add(LuaVector3 a, LuaVector3 b)
+    {
+        return new LuaVector3(ToUnityVector(a) + ToUnityVector(b));
+    }
+
+    public static LuaVector3 subtract(LuaVector3 a, LuaVector3 b)
+    {
+        return new LuaVector3(ToUnityVector(a) - ToUnityVector(b));
+    }
+
+    public static LuaVector3 scale(LuaVector3 vector, float amount)
+    {
+        return new LuaVector3(ToUnityVector(vector) * amount);
+    }
+
+    public static LuaVector3 normalize(LuaVector3 vector)
+    {
+        return new LuaVector3(ToUnityVector(vector).normalized);
+    }
+
+    public static float dot(LuaVector3 a, LuaVector3 b)
+    {
+        return Vector3.Dot(ToUnityVector(a), ToUnityVector(b));
+    }
+
+    public static LuaVector3 cross(LuaVector3 a, LuaVector3 b)
+    {
+        return new LuaVector3(Vector3.Cross(ToUnityVector(a), ToUnityVector(b)));
+    }
+
+    public static LuaVector3 lerp(LuaVector3 a, LuaVector3 b, float t)
+    {
+        return new LuaVector3(Vector3.Lerp(ToUnityVector(a), ToUnityVector(b), t));
+    }
+
+    public static float clamp(float value, float minimum, float maximum)
+    {
+        float lower = Mathf.Min(minimum, maximum);
+        float upper = Mathf.Max(minimum, maximum);
+        return Mathf.Clamp(value, lower, upper);
+    }
+
+    public static float smoothstep(float from, float to, float t)
+    {
+        return Mathf.SmoothStep(from, to, Mathf.Clamp01(t));
+    }
+
     public static float distance(LuaVector3 a, LuaVector3 b)
     {
         return Vector3.Distance(ToUnityVector(a), ToUnityVector(b));

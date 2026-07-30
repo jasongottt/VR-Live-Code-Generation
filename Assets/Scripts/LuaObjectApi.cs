@@ -100,6 +100,34 @@ public sealed class LuaObjectApi
         }
     }
 
+    public bool isVisible()
+    {
+        Renderer renderer = GetRenderer();
+        return target.activeInHierarchy && renderer != null && renderer.enabled;
+    }
+
+    public LuaColor getColor()
+    {
+        Material material = GetRuntimeMaterial();
+
+        if (material == null)
+        {
+            return new LuaColor(Color.white);
+        }
+
+        if (material.HasProperty("_BaseColor"))
+        {
+            return new LuaColor(material.GetColor("_BaseColor"));
+        }
+
+        if (material.HasProperty("_Color"))
+        {
+            return new LuaColor(material.GetColor("_Color"));
+        }
+
+        return new LuaColor(Color.white);
+    }
+
     public void setColor(float r, float g, float b, float a)
     {
         Material material = GetRuntimeMaterial();
@@ -129,6 +157,18 @@ public sealed class LuaObjectApi
         {
             Debug.LogWarning("Runtime material has no _BaseColor or _Color property.");
         }
+    }
+
+    public LuaColor getEmission()
+    {
+        Material material = GetRuntimeMaterial();
+
+        if (material != null && material.HasProperty("_EmissionColor"))
+        {
+            return new LuaColor(material.GetColor("_EmissionColor"));
+        }
+
+        return new LuaColor(Color.black);
     }
 
     public void setEmission(float r, float g, float b, float intensity)
@@ -175,6 +215,27 @@ public sealed class LuaObjectApi
         }
 
         return cachedRenderer;
+    }
+}
+
+[MoonSharpUserData]
+public sealed class LuaColor
+{
+    public float r;
+    public float g;
+    public float b;
+    public float a;
+
+    public LuaColor()
+    {
+    }
+
+    public LuaColor(Color color)
+    {
+        r = color.r;
+        g = color.g;
+        b = color.b;
+        a = color.a;
     }
 }
 

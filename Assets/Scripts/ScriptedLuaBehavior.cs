@@ -79,6 +79,16 @@ public class ScriptedLuaBehavior : MonoBehaviour
             script.Globals["log"] = (Action<string>)LogFromLua;
             script.Globals["distance"] = (Func<LuaVector3, LuaVector3, float>)LuaMathApi.distance;
             script.Globals["direction"] = (Func<LuaVector3, LuaVector3, LuaVector3>)LuaMathApi.direction;
+            script.Globals["vec3"] = (Func<float, float, float, LuaVector3>)LuaMathApi.vec3;
+            script.Globals["add"] = (Func<LuaVector3, LuaVector3, LuaVector3>)LuaMathApi.add;
+            script.Globals["subtract"] = (Func<LuaVector3, LuaVector3, LuaVector3>)LuaMathApi.subtract;
+            script.Globals["scale"] = (Func<LuaVector3, float, LuaVector3>)LuaMathApi.scale;
+            script.Globals["normalize"] = (Func<LuaVector3, LuaVector3>)LuaMathApi.normalize;
+            script.Globals["dot"] = (Func<LuaVector3, LuaVector3, float>)LuaMathApi.dot;
+            script.Globals["cross"] = (Func<LuaVector3, LuaVector3, LuaVector3>)LuaMathApi.cross;
+            script.Globals["lerp"] = (Func<LuaVector3, LuaVector3, float, LuaVector3>)LuaMathApi.lerp;
+            script.Globals["clamp"] = (Func<float, float, float, float>)LuaMathApi.clamp;
+            script.Globals["smoothstep"] = (Func<float, float, float, float>)LuaMathApi.smoothstep;
 
             script.DoString(scriptText);
 
@@ -117,6 +127,7 @@ public class ScriptedLuaBehavior : MonoBehaviour
         }
 
         UserData.RegisterType<LuaObjectApi>();
+        UserData.RegisterType<LuaColor>();
         UserData.RegisterType<LuaVector3>();
         UserData.RegisterType<LuaWorldApi>();
         UserData.RegisterType<LuaControllerApi>();

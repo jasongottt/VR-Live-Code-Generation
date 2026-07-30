@@ -267,6 +267,16 @@ Allowed globals:
 - log(message)
 - distance(a, b)
 - direction(from, to)
+- vec3(x, y, z)
+- add(a, b)
+- subtract(a, b)
+- scale(vector, amount)
+- normalize(vector)
+- dot(a, b)
+- cross(a, b)
+- lerp(a, b, t)
+- clamp(value, minimum, maximum)
+- smoothstep(from, to, t)
 - math
 
 Allowed object methods:
@@ -285,8 +295,11 @@ Allowed object methods:
 - object:getScale()
 - object.scale
 - object:setScale(x, y, z)
+- object:getColor()
 - object:setColor(r, g, b, a)
+- object:getEmission()
 - object:setEmission(r, g, b, intensity)
+- object:isVisible()
 - object:setVisible(isVisible)
 
 Allowed player/world methods:
@@ -312,6 +325,12 @@ Allowed hand methods:
 - leftHand.forward
 - leftHand:getRotationEuler()
 - leftHand.rotationEuler
+- leftHand:getVelocity()
+- leftHand:getAngularVelocity()
+- leftHand:getGrip()
+- leftHand:getTrigger()
+- leftHand:isPrimaryPressed()
+- leftHand:isSecondaryPressed()
 - leftHand:isTracked()
 - rightHand:getPosition()
 - rightHand.position
@@ -319,6 +338,12 @@ Allowed hand methods:
 - rightHand.forward
 - rightHand:getRotationEuler()
 - rightHand.rotationEuler
+- rightHand:getVelocity()
+- rightHand:getAngularVelocity()
+- rightHand:getGrip()
+- rightHand:getTrigger()
+- rightHand:isPrimaryPressed()
+- rightHand:isSecondaryPressed()
 - rightHand:isTracked()
 
 Lua rules:
@@ -327,6 +352,10 @@ Lua rules:
 - Do not create infinite loops.
 - Prefer simple frame-by-frame behavior in update(dt).
 - Check isTracked() before depending on a hand.
+- Positions, rotations, velocities, and vectors returned by direction, vec3, add, subtract, scale, normalize, cross, and lerp have x, y, and z fields.
+- distance, dot, clamp, and smoothstep return numbers.
+- object:getColor() and object:getEmission() return values with r, g, b, and a fields.
+- Hand grip and trigger values are clamped between 0 and 1. Hand velocity values are zero when unavailable.
 - Use numeric literals for colors, speeds, distances, and amplitudes.
 - Put each Lua source line in a separate luaLines array item.
 - JSON-escape quotes within an individual Lua source line. Do not place literal newlines inside an array item.
@@ -367,6 +396,21 @@ function update(dt)
     if leftHand:isTracked() then
         local handRotation = leftHand:getRotationEuler()
         object:setRotationEuler(handRotation.x, handRotation.y, handRotation.z)
+    end
+end
+
+Example of using controller input, velocity, vector math, and the starting color:
+local baseColor
+function start()
+    baseColor = object:getColor()
+end
+function update(dt)
+    if rightHand:isTracked() then
+        local velocity = rightHand:getVelocity()
+        local speed = math.sqrt(dot(velocity, velocity))
+        local highlight = clamp(math.max(rightHand:getTrigger(), speed), 0, 1)
+        local red = baseColor.r + (1 - baseColor.r) * highlight
+        object:setColor(red, baseColor.g, baseColor.b, baseColor.a)
     end
 end
 
